@@ -39,11 +39,13 @@ function print_output () {
 
 function main () {
     find_service_files
-    export -f find_rpm
-    export -f find_service
-    export -f find_repo
-    export -f print_output
-    echo $SERVICE_FILES | sed 's/ /\n/g' | parallel --will-cite "export FILE={}; find_rpm; find_service; find_repo; print_output"
+    for FILE in $SERVICE_FILES; do
+        export FILE=$FILE
+	find_rpm
+	find_service
+	find_repo
+	print_output
+    done
 }
 
 main
