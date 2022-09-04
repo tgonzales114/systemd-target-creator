@@ -48,4 +48,5 @@ function main () {
     done
 }
 
-main
+echo "INFO: finding service data, this can take a few minutes..."
+main | tee output.txt
