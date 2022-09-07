@@ -2,6 +2,8 @@
 # services to exclude if found
 exclusions:
   - exclude.service
+  - exclude2.service
 # services to include even if not found
 inclusions:
   - include.service
+  - include2.service
