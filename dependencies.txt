@@ -1,0 +1,5 @@
+current implementation of parser.py requires the following
+  - rhel8?
+  - dnf
+  - python36
+  - python3-pyyaml
