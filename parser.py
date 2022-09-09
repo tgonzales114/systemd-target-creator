@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/python3.6
 
 def load_config():
     import yaml
@@ -52,7 +52,107 @@ def create_target(target, repo, is_dryrun, is_force):
     except PermissionError:
         print('ERROR: permission denied, try running again with root permissions')
 
-#def find_services():
+def get_service_files():
+    import subprocess
+    from sys import exit
+    from textwrap import indent
+
+    src1 = '/usr/lib/systemd/system'
+    src2 = '/etc/systemd/system'
+    cmd = f'find {src1} {src2} -name \'*.service\' ! -type l'
+
+    sp = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    rc = sp.wait()
+    stdout_byte, stderr_byte = sp.communicate()
+
+    stdout = stdout_byte.decode('UTF-8')
+    stderr = stderr_byte.decode('UTF-8')
+
+    if rc != 0:
+        print(f'ERROR: while getting systemd service files, return code: \'{rc}\', printing stderr')
+        print(indent(stderr, '    '))
+        exit(rc)
+
+    service_files = stdout.strip().split('\n')
+    return service_files
+
+
+def get_service_name(service_file):
+    name = service_file.split('/')[-1]
+    return name
+
+def get_service_rpm(service_file):
+    import subprocess
+    from sys import exit
+    from textwrap import indent
+
+    cmd = f'rpm -qf {service_file} --queryformat "%{{NAME}}\n"'
+
+    sp = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    rc = sp.wait()
+    stdout_byte, stderr_byte = sp.communicate()
+
+    stdout = stdout_byte.decode('UTF-8')
+    stderr = stderr_byte.decode('UTF-8')
+
+    if rc == 1:
+        rpm = 'none'
+        return rpm
+
+    if rc > 1:
+        print(f'ERROR: while trying to get rpm info for systemd service file \'{service_file}\', return code: \'{rc}\', printing stderr')
+        print(indent(stderr, '    '))
+        exit(rc)
+
+    rpm = stdout.strip().split('\n')[0]
+    return rpm
+
+def get_rpm_from_repo(rpm):
+    import dnf
+
+    base = dnf.Base()
+    base.fill_sack()
+
+    q = base.sack.query()
+    i = q.installed()
+    f = i.filter(name=rpm)
+
+    for pkg in f:
+        return pkg.from_repo
+
+def get_all_service_data():
+    print('INFO: getting all systemd service data, this can take a few minutes')
+
+    service_data = []
+    files = get_service_files()
+    for f in files:
+        service = get_service_name(f)
+        rpm = get_service_rpm(f)
+        from_repo = get_rpm_from_repo(rpm)
+        data = { 'file': f, 'service': service, 'rpm': rpm, 'from_repo': from_repo }
+        service_data.append(data)
+
+    return service_data
+
+def get_services_to_modify(service_data, repo):
+    from sys import exit
+
+    services = []
+
+    for i in service_data:
+        from_repo = i['from_repo']
+        if from_repo == repo:
+            service_file = i['file']
+            services.append(service_file)
+
+    if not services:
+        print(f'ERROR: could not find any systemd services that were installed from packages from the rpm repository \'{repo}\' is this a typo?')
+        exit(1)
+
+    return services
+
 #def modify_services():
 #def output():
 
@@ -63,8 +163,13 @@ def main():
     is_dryrun = args.is_dryrun
     is_force = args.is_force
 
+    service_data = get_all_service_data()
+
+    get_services_to_modify(service_data, repo)
+
     create_target(target, repo, is_dryrun, is_force)
 
     inclusions, exceptions = load_config()
+
 
 main()
