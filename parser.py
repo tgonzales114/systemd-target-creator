@@ -52,6 +52,15 @@ def create_target(target, repo, is_dryrun, is_force):
     except PermissionError:
         print('ERROR: permission denied, try running again with root permissions')
 
+def progress_bar(progress, total):
+    full = '#'
+    empty = '-'
+
+    percent = 100 * (progress / float(total))
+    bar = full * int(percent) + empty * (100 - int(percent))
+
+    print('\r[' + str(bar) + '] ' + str(round(percent, 2)) + '%', end='\r')
+
 def get_service_files():
     import subprocess
     from sys import exit
@@ -127,13 +136,19 @@ def get_all_service_data():
 
     service_data = []
     files = get_service_files()
+    total = len(files)
+    i = 0
+    print(f'INFO: found {total} systemd service files')
     for f in files:
+        i += 1
+        progress_bar(i, total)
         service = get_service_name(f)
         rpm = get_service_rpm(f)
         from_repo = get_rpm_from_repo(rpm)
         data = { 'file': f, 'service': service, 'rpm': rpm, 'from_repo': from_repo }
         service_data.append(data)
 
+    print()
     return service_data
 
 def get_services_to_modify(service_data, repo):
@@ -170,6 +185,5 @@ def main():
     create_target(target, repo, is_dryrun, is_force)
 
     inclusions, exceptions = load_config()
-
 
 main()
