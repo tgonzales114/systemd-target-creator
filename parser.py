@@ -59,7 +59,11 @@ def get_os_release():
     if platform == 'linux':
         path = pathlib.Path('/etc/os-release')
         with open(path) as stream:
-            reader = csv.reader(stream, delimiter='=')
+            stream_non_empty = []
+            for line in stream.readlines():
+                if line.strip():
+                    stream_non_empty.append(line)
+            reader = csv.reader(stream_non_empty, delimiter='=')
             os_release = dict(reader)
         return os_release
     else:
@@ -219,7 +223,7 @@ def main():
     is_force = args.is_force
 
     os_release = get_os_release()
-    os_version = os_release['VERSION']
+    os_version = os_release['VERSION_ID']
 
     service_data = get_all_service_data(os_version)
     get_services_to_modify(service_data, repo)
