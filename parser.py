@@ -1,4 +1,4 @@
-#!/usr/bin/python3.6
+#!/usr/bin/python3
 
 def load_config():
     import yaml
@@ -51,6 +51,19 @@ def create_target(target, repo, is_dryrun, is_force):
             file.write(file_content)
     except PermissionError:
         print('ERROR: permission denied, try running again with root permissions')
+
+def get_os_release():
+    import csv
+    import pathlib
+    from sys import platform
+    if platform == 'linux':
+        path = pathlib.Path('/etc/os-release')
+        with open(path) as stream:
+            reader = csv.reader(stream, delimiter='=')
+            os_release = dict(reader)
+        return os_release
+    else:
+        print('ERROR: unsupported platform')
 
 def progress_bar(progress, total):
     full = '#'
@@ -118,7 +131,30 @@ def get_service_rpm(service_file):
     rpm = stdout.strip().split('\n')[0]
     return rpm
 
-def get_rpm_from_repo(rpm):
+def get_rpm_from_repo_el7(rpm):
+    import subprocess
+    from sys import exit
+    from textwrap import indent
+
+    cmd = f'yumdb get from_repo {rpm} | grep \'=\' | awk \'{{print $NF}}\''
+
+    sp = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    rc = sp.wait()
+    stdout_byte, stderr_byte = sp.communicate()
+
+    stdout = stdout_byte.decode('UTF-8')
+    stderr = stderr_byte.decode('UTF-8')
+
+    if rc != 0:
+        print(f'ERROR: while getting rpm from_repo value for \'{rpm}\', return code: \'{rc}\', printing stderr')
+        print(indent(stderr, '    '))
+        exit(rc)
+
+    from_repo = stdout.strip()
+    return from_repo
+
+def get_rpm_from_repo_el8(rpm):
     import dnf
 
     base = dnf.Base()
@@ -131,9 +167,8 @@ def get_rpm_from_repo(rpm):
     for pkg in f:
         return pkg.from_repo
 
-def get_all_service_data():
+def get_all_service_data(os_version):
     print('INFO: getting all systemd service data, this can take a few minutes')
-
     service_data = []
     files = get_service_files()
     total = len(files)
@@ -144,7 +179,12 @@ def get_all_service_data():
         progress_bar(i, total)
         service = get_service_name(f)
         rpm = get_service_rpm(f)
-        from_repo = get_rpm_from_repo(rpm)
+        if os_version == '8':
+            from_repo = get_rpm_from_repo_el8(rpm)
+        elif os_version == '7':
+            from_repo = get_rpm_from_repo_el7(rpm)
+        else:
+            print(f'ERROR: unsupported operating system major version \'{os_version}\'')
         data = { 'file': f, 'service': service, 'rpm': rpm, 'from_repo': from_repo }
         service_data.append(data)
 
@@ -178,10 +218,11 @@ def main():
     is_dryrun = args.is_dryrun
     is_force = args.is_force
 
-    service_data = get_all_service_data()
+    os_release = get_os_release()
+    os_version = os_release['VERSION']
 
+    service_data = get_all_service_data(os_version)
     get_services_to_modify(service_data, repo)
-
     create_target(target, repo, is_dryrun, is_force)
 
     inclusions, exceptions = load_config()
