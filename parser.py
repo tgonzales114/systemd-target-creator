@@ -140,7 +140,10 @@ def get_rpm_from_repo_el7(rpm):
     from sys import exit
     from textwrap import indent
 
-    cmd = f'yumdb get from_repo {rpm} | grep \'=\' | awk \'{{print $NF}}\''
+    if rpm == 'none':
+        return rpm
+
+    cmd = f'yumdb get from_repo {rpm} | grep \'=\' | tail -n 1 | awk \'{{print $NF}}\''
 
     sp = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
@@ -161,6 +164,9 @@ def get_rpm_from_repo_el7(rpm):
 def get_rpm_from_repo_el8(rpm):
     import dnf
 
+    if rpm == 'none':
+        return rpm
+
     base = dnf.Base()
     base.fill_sack()
 
@@ -168,8 +174,9 @@ def get_rpm_from_repo_el8(rpm):
     i = q.installed()
     f = i.filter(name=rpm)
 
-    for pkg in f:
-        return pkg.from_repo
+    latest_rpm = f[-1]
+    from_repo = latest_rpm.from_repo
+    return from_repo
 
 def get_all_service_data(os_version):
     print('INFO: getting all systemd service data, this can take a few minutes')
