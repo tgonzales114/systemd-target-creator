@@ -2,11 +2,17 @@
 
 def load_config():
     import yaml
+    from sys import exit
     config = 'config.yml'
+    print(f'INFO: loading exclusions and inclusions from config file \'{config}\'')
     with open(config, 'r') as file:
-        data = yaml.safe_load(file)
-    i = data['inclusions']
-    x = data['exclusions']
+        try:
+            data = yaml.safe_load(file)
+            i = data['inclusions']
+            x = data['exclusions']
+        except:
+            print(f'ERROR: could not properly load data from config file \'{config}\' try running running \'yamllint {config}\' for more details')
+            exit(1)
     return i, x
 
 def argparser():
@@ -113,7 +119,7 @@ def get_service_rpm(service_file):
     from sys import exit
     from textwrap import indent
 
-    cmd = f'rpm -qf {service_file} --queryformat "%{{NAME}}\n"'
+    cmd = f'rpm -qf {service_file} --queryformat \'%{{NAME}}\n\''
 
     sp = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
@@ -202,16 +208,42 @@ def get_all_service_data(os_version):
     print()
     return service_data
 
-def get_services_to_modify(service_data, repo):
+def get_services_to_modify(service_data, repo, inclusions, exclusions):
     from sys import exit
+    from operator import itemgetter
 
     services = []
 
     for i in service_data:
         from_repo = i['from_repo']
         if from_repo == repo:
-            service_file = i['file']
-            services.append(service_file)
+            services.append(i)
+
+    print("INFO: adding inclusions")
+    for i in inclusions:
+        if not i in map(itemgetter('service'), service_data):
+            print(f'WARNING: systemd service \'{i}\' does not exist, not adding')
+            continue
+        if i in map(itemgetter('service'), services):
+            print(f'NOTICE: systemd service \'{i}\' already added, not adding')
+            continue
+        print(f'NOTICE: adding systemd service \'{i}\'')
+        for s in service_data:
+            if i == s['service']:
+                services.append(s)
+
+    print("INFO: removing exclusions")
+    for i in exclusions:
+        if not i in map(itemgetter('service'), service_data):
+            print(f'WARNING: systemd service \'{i}\' does not exist, not removing')
+            continue
+        if not i in map(itemgetter('service'), services):
+            print(f'NOTICE: could not find systemd service \'{i}\' do not need to remove')
+            continue
+        print(f'NOTICE: removing systemd service \'{i}\'')
+        for s in service_data:
+            if i == s['service']:
+                services.remove(s)
 
     if not services:
         print(f'ERROR: could not find any systemd services that were installed from packages from the rpm repository \'{repo}\' is this a typo?')
@@ -229,13 +261,13 @@ def main():
     is_dryrun = args.is_dryrun
     is_force = args.is_force
 
+    inclusions, exclusions = load_config()
+
     os_release = get_os_release()
     os_version = os_release['VERSION_ID']
 
     service_data = get_all_service_data(os_version)
-    get_services_to_modify(service_data, repo)
+    get_services_to_modify(service_data, repo, inclusions, exclusions)
     create_target(target, repo, is_dryrun, is_force)
-
-    inclusions, exceptions = load_config()
 
 main()
