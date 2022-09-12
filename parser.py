@@ -57,6 +57,7 @@ def create_target(target, repo, is_dryrun, is_force):
             file.write(file_content)
     except PermissionError:
         print('ERROR: permission denied, try running again with root permissions')
+        exit(1)
 
 def get_os_release():
     import csv
@@ -219,7 +220,7 @@ def get_services_to_modify(service_data, repo, inclusions, exclusions):
         if from_repo == repo:
             services.append(i)
 
-    print("INFO: adding inclusions")
+    print('INFO: adding inclusions')
     for i in inclusions:
         if not i in map(itemgetter('service'), service_data):
             print(f'WARNING: systemd service \'{i}\' does not exist, not adding')
@@ -232,7 +233,7 @@ def get_services_to_modify(service_data, repo, inclusions, exclusions):
             if i == s['service']:
                 services.append(s)
 
-    print("INFO: removing exclusions")
+    print('INFO: removing exclusions')
     for i in exclusions:
         if not i in map(itemgetter('service'), service_data):
             print(f'WARNING: systemd service \'{i}\' does not exist, not removing')
@@ -251,8 +252,68 @@ def get_services_to_modify(service_data, repo, inclusions, exclusions):
 
     return services
 
-#def modify_services():
-#def output():
+def modify_services(service, target, is_dryrun, is_force):
+    from textwrap import dedent, indent
+    from os import path
+    from os import mkdir
+    from sys import exit
+    file_content = dedent('''\
+    [Unit]
+    StopWhenUnneeded=yes
+    [Install]
+    WantedBy={t}.target''').format(t=target)
+
+    file_dir = f'/etc/systemd/system/{service}.d'
+    file_name = f'override.conf'
+    file_path = f'{file_dir}/{file_name}'
+
+    if not path.exists(file_dir):
+        print(f'INFO: creating override directory for systemd service {service}')
+        print(indent(f'# {file_dir}', '    '))
+        if not is_dryrun:
+            try:
+                mkdir(file_dir)
+            except PermissionError:
+                print('ERROR: permission denied, try running again with root permissions')
+                exit(1)
+
+    print(f'INFO: creating override file for systemd service {service}')
+
+    if path.exists(file_path) and not is_force:
+        print(f'ERROR: file already exists \'{file_path}\'')
+        exit(1)
+
+    if path.exists(file_path) and is_force:
+        print(f'WARNING: overwriting file \'{file_path}\'')
+
+    if is_dryrun:
+        print(indent(f'# {file_path}', '    '))
+        print(indent(file_content, '    '))
+        return
+
+    try:
+        with open(file_path, 'w') as file:
+            file.write(file_content)
+    except PermissionError:
+        print('ERROR: permission denied, try running again with root permissions')
+        exit(1)
+
+def instructions(target):
+    from textwrap import dedent, indent
+
+    message = dedent('''\
+    # check for status of target dependencies (a bit verbose)
+    systemctl list-dependencies {t}.target
+
+    # stop all services controlled by target
+    systemctl stop {t}.target
+
+    # start all services controlled by target
+    systemctl start {t}.target''').format(t=target)
+
+    print(f'INFO: created custom target: {target}.target')
+    print('INFO: control commands:')
+    print(indent(message, '    '))
 
 def main():
     args = argparser()
@@ -267,7 +328,12 @@ def main():
     os_version = os_release['VERSION_ID']
 
     service_data = get_all_service_data(os_version)
-    get_services_to_modify(service_data, repo, inclusions, exclusions)
+    modify_service_data = get_services_to_modify(service_data, repo, inclusions, exclusions)
+    for item in modify_service_data:
+        service=item['service']
+        modify_services(service, target, is_dryrun, is_force)
+
     create_target(target, repo, is_dryrun, is_force)
+    instructions(target)
 
 main()
