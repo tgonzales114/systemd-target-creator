@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-def load_config():
+def load_config(is_verbose):
     import yaml
     from sys import exit
     config = 'config.yml'
@@ -8,31 +8,38 @@ def load_config():
     with open(config, 'r') as file:
         try:
             data = yaml.safe_load(file)
-            i = data['inclusions']
-            x = data['exclusions']
+            inclusions = data['inclusions']
+            exclusions = data['exclusions']
         except:
             print(f'ERROR: could not properly load data from config file \'{config}\' try running running \'yamllint {config}\' for more details')
             exit(1)
-    return i, x
+
+    if is_verbose:
+        for i in inclusions:
+            print(f'INFO: loaded inclusion of \'{i}\' will attempt to include later')
+        for x in exclusions:
+            print(f'INFO: loaded exclusion of \'{x}\' will attempt to remove later')
+
+    return inclusions, exclusions
 
 def argparser():
     import argparse
     parser = argparse.ArgumentParser(description='create custom systemd targets to control multiple systemd services at once!')
     parser.add_argument('--dryrun', help='show changes without making them', action='store_true', dest='is_dryrun')
     parser.add_argument('--force', help='overwrite any existing files', action='store_true', dest='is_force')
+    parser.add_argument('-v', '--verbose', help='show more output', action='store_true', dest='is_verbose')
     parser.add_argument('-t', '--target', help='name of systemd target to create', action='store', dest='target', required=True)
     parser.add_argument('-r', '--repo', help='name of rpm repository to filter services', action='store', dest='repo', required=True)
     args = parser.parse_args()
     return args
 
-def create_target(target, repo, is_dryrun, is_force):
+def create_target(target, repo, is_dryrun, is_force, is_verbose):
     from textwrap import dedent, indent
     from os import path
     from sys import exit
     file_content = dedent('''\
     [Unit]
     Description=Custom Target {t} of Services From RPM Repository {r}
-    Requires=multi-user.target network.target
     After=multi-user.target network.target
     Conflicts=emergency.target rescue.target
     AllowIsolate=no''').format(t=target, r=repo)
@@ -41,23 +48,23 @@ def create_target(target, repo, is_dryrun, is_force):
     print('INFO: creating systemd target file')
 
     if path.exists(file_path) and not is_force:
-        print(f'ERROR: file already exists \'{file_path}\'')
+        print(f'ERROR: file already exists \'{file_path}\' if you are sure you want to overwrite this file re-run with --force')
         exit(1)
 
     if path.exists(file_path) and is_force:
         print(f'WARNING: overwriting file \'{file_path}\'')
 
-    if is_dryrun:
+    if is_verbose:
         print(indent(f'# {file_path}', '    '))
         print(indent(file_content, '    '))
-        return
 
-    try:
-        with open(file_path, 'w') as file:
-            file.write(file_content)
-    except PermissionError:
-        print('ERROR: permission denied, try running again with root permissions')
-        exit(1)
+    if not is_dryrun:
+        try:
+            with open(file_path, 'w') as file:
+                file.write(file_content)
+        except PermissionError:
+            print('ERROR: permission denied, try running again with root permissions')
+            exit(1)
 
 def get_os_release():
     import csv
@@ -185,13 +192,16 @@ def get_rpm_from_repo_el8(rpm):
     from_repo = latest_rpm.from_repo
     return from_repo
 
-def get_all_service_data(os_version):
+def get_all_service_data(os_version, is_verbose):
     print('INFO: getting all systemd service data, this can take a few minutes')
     service_data = []
     files = get_service_files()
     total = len(files)
     i = 0
-    print(f'INFO: found {total} systemd service files')
+
+    if is_verbose:
+        print(f'INFO: found {total} systemd service files')
+
     for f in files:
         i += 1
         progress_bar(i, total)
@@ -223,10 +233,10 @@ def get_services_to_modify(service_data, repo, inclusions, exclusions):
     print('INFO: adding inclusions')
     for i in inclusions:
         if not i in map(itemgetter('service'), service_data):
-            print(f'WARNING: systemd service \'{i}\' does not exist, not adding')
+            print(f'WARNING: systemd service \'{i}\' does not exist, not including')
             continue
         if i in map(itemgetter('service'), services):
-            print(f'NOTICE: systemd service \'{i}\' already added, not adding')
+            print(f'NOTICE: systemd service \'{i}\' already added, do not need to include')
             continue
         print(f'NOTICE: adding systemd service \'{i}\'')
         for s in service_data:
@@ -252,11 +262,12 @@ def get_services_to_modify(service_data, repo, inclusions, exclusions):
 
     return services
 
-def modify_services(service, target, is_dryrun, is_force):
+def modify_services(service, target, is_dryrun, is_force, is_verbose):
     from textwrap import dedent, indent
     from os import path
     from os import mkdir
     from sys import exit
+
     file_content = dedent('''\
     [Unit]
     StopWhenUnneeded=yes
@@ -269,7 +280,8 @@ def modify_services(service, target, is_dryrun, is_force):
 
     if not path.exists(file_dir):
         print(f'INFO: creating override directory for systemd service {service}')
-        print(indent(f'# {file_dir}', '    '))
+        if is_verbose:
+            print(indent(f'# {file_dir}', '    '))
         if not is_dryrun:
             try:
                 mkdir(file_dir)
@@ -280,38 +292,55 @@ def modify_services(service, target, is_dryrun, is_force):
     print(f'INFO: creating override file for systemd service {service}')
 
     if path.exists(file_path) and not is_force:
-        print(f'ERROR: file already exists \'{file_path}\'')
+        print(f'ERROR: file already exists \'{file_path}\' if you are sure you want to overwrite this file re-run with --force')
         exit(1)
 
     if path.exists(file_path) and is_force:
         print(f'WARNING: overwriting file \'{file_path}\'')
 
-    if is_dryrun:
+    if is_verbose:
         print(indent(f'# {file_path}', '    '))
         print(indent(file_content, '    '))
-        return
 
-    try:
-        with open(file_path, 'w') as file:
-            file.write(file_content)
-    except PermissionError:
-        print('ERROR: permission denied, try running again with root permissions')
-        exit(1)
+    if not is_dryrun:
+        try:
+            with open(file_path, 'w') as file:
+                file.write(file_content)
+        except PermissionError:
+            print('ERROR: permission denied, try running again with root permissions')
+            exit(1)
+
+    append_content = f'Wants={service}\n'
+    target_path = f'/etc/systemd/system/{target}.target'
+
+    print(f'INFO: appending service to target file')
+
+    if is_verbose:
+        print(indent(f'# {target_path}', '    '))
+        print(indent(append_content, '    '))
+
+    if not is_dryrun:
+        try:
+            with open(target_path, 'a') as file:
+                file.write(append_content)
+        except PermissionError:
+            print('ERROR: permission denied, try running again with root permissions')
+            exit(1)
 
 def instructions(target):
     from textwrap import dedent, indent
 
     message = dedent('''\
-    # check for status of target dependencies (a bit verbose)
+    # check the status of all services controlled by the target
     systemctl list-dependencies {t}.target
 
-    # stop all services controlled by target
-    systemctl stop {t}.target
+    # stop all services controlled by the target
+    sudo systemctl stop {t}.target
 
-    # start all services controlled by target
-    systemctl start {t}.target''').format(t=target)
+    # start all services controlled by the target
+    sudo systemctl start {t}.target''').format(t=target)
 
-    print(f'INFO: created custom target: {target}.target')
+    print(f'INFO: finished creating custom target: {target}.target')
     print('INFO: control commands:')
     print(indent(message, '    '))
 
@@ -321,19 +350,20 @@ def main():
     repo = args.repo
     is_dryrun = args.is_dryrun
     is_force = args.is_force
+    is_verbose = args.is_verbose
 
-    inclusions, exclusions = load_config()
+    inclusions, exclusions = load_config(is_verbose)
 
     os_release = get_os_release()
     os_version = os_release['VERSION_ID']
 
-    service_data = get_all_service_data(os_version)
+    service_data = get_all_service_data(os_version, is_verbose)
     modify_service_data = get_services_to_modify(service_data, repo, inclusions, exclusions)
+    create_target(target, repo, is_dryrun, is_force, is_verbose)
     for item in modify_service_data:
         service=item['service']
-        modify_services(service, target, is_dryrun, is_force)
+        modify_services(service, target, is_dryrun, is_force, is_verbose)
 
-    create_target(target, repo, is_dryrun, is_force)
     instructions(target)
 
 main()
