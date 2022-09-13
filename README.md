@@ -59,7 +59,9 @@ optional arguments:
 
 ### Example
 ```bash
-# create custom systemd target 'hashi' that will be able to control all systemd services installed by packages from the hashicorp rpm repository
+# create custom systemd target named 'hashi'
+# that will be able to control all systemd services
+# that were installed by packages from the hashicorp rpm repository
 sudo ./systemd-target-creator.py -t hashi -r hashicorp
 ```
 
