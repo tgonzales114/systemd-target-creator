@@ -193,6 +193,7 @@ def get_rpm_from_repo_el8(rpm):
     return from_repo
 
 def get_all_service_data(os_version, is_verbose):
+    from re import match
     print('INFO: getting all systemd service data, this can take a few minutes')
     service_data = []
     files = get_service_files()
@@ -207,9 +208,9 @@ def get_all_service_data(os_version, is_verbose):
         progress_bar(i, total)
         service = get_service_name(f)
         rpm = get_service_rpm(f)
-        if os_version == '8':
+        if os_version == '8' or match('^8\.[0-9]$', os_version):
             from_repo = get_rpm_from_repo_el8(rpm)
-        elif os_version == '7':
+        elif os_version == '7' or match('^7\.[0-9]$', os_version):
             from_repo = get_rpm_from_repo_el7(rpm)
         else:
             print(f'ERROR: unsupported operating system major version \'{os_version}\'')
