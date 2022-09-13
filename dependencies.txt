@@ -1,5 +1,13 @@
-current implementation of parser.py requires the following
-  - rhel8?
-  - dnf
+supported platforms:
+  - el8
+  - el7
+
+required packages (rpms) for el8:
   - python36
   - python3-pyyaml
+  - python3-dnf
+
+required packages (rpms) for el7:
+  - python3
+  - python36-PyYAML
+  - yum-utils
