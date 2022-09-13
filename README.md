@@ -2,26 +2,70 @@
 Have you ever wanted to group together a bunch of systemd services?
 
 ### How it works
-Given the name of an rpm repository it will find all systemd service files installed by packages from that repository, then create a systemd target to control them.
+Given the name of an rpm repository this script will find all systemd service files installed by packages from that repository, then create a systemd target to control them.
 
 ### Use cases
-This is useful if you have a custom repo that provides several systemd services that may be useful to control/monitor all at once
+This is useful if you have a custom repo that provides several systemd services that may be useful to control (start, stop, or monitor) with a single command
+
+### Supported Platforms
+The Current implementation only supports **Red Hat Enterprise Linux 8/7**
+
+### Requirements
+```
+required packages (rpms) for el8:
+  - python36
+  - python3-pyyaml
+  - python3-dnf
+
+required packages (rpms) for el7:
+  - python3
+  - python36-PyYAML
+  - yum-utils
+```
 
 ### How to run
-First run `find-service-data.sh` this will create a file `output.txt`
+- Ensure you have a copy of `parser.py` and `config.yml` in a local directory on your system.
+- Wanna get an idea of what this script will try to do?
+  - do a dryrun `./parser.py -t TARGET -r REPO --dryrun`
+- Still not sure what is going on?
+  - try adding the verbose flag. `./parser.py -t TARGET -r REPO --dryrun -v`
+- Want to add or remove a service?
+  - modify the `config.yml`
+- Not sure how to edit the `.yml` or yaml files?
+  - check the [online yaml documentation](https://yaml.org/spec/1.2.2/#22-structures)
+- Ready to try it out for real?
+  - re-run with root permission `sudo ./parser.py -t TARGET -r REPO`
+- Did the script stop due to a file already existing?
+  - verify this file is safe to overwrite or make a backup just in case!
+  - then add the force flag `sudo ./parser.py -t TARGET -r REPO --force`
 
-Finally run `create-target.sh` which takes two positional arguments, target_name and rpm_repo_name
+### Command Help
 ```bash
-# create output.txt with systemd service data
-./find-service-data.sh
+$ ./parser.py --help
+usage: parser.py [-h] [--dryrun] [--force] [-v] -t TARGET -r REPO
 
-# create custom systemd target hashi that will be able to control all systemd services installed by packages from the hashicorp rpm repository
-sudo ./create-target.sh hashi hashicorp
+create custom systemd targets to control multiple systemd services at once!
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --dryrun              show changes without making them
+  --force               overwrite any existing files
+  -v, --verbose         show more output
+  -t TARGET, --target TARGET
+                        name of systemd target to create
+  -r REPO, --repo REPO  name of rpm repository to filter services
+
+```
+
+### Example
+```bash
+# create custom systemd target 'hashi' that will be able to control all systemd services installed by packages from the hashicorp rpm repository
+sudo ./parser.py -t hashi -r hashicorp
 ```
 
 ### Controlling the target
 ```bash
-# check for status of target dependencies (a bit verbose)
+# check for status of target dependencies
 systemctl list-dependencies hashi.target
 
 # stop all services controlled by target
