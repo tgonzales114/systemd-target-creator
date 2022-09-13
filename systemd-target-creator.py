@@ -24,7 +24,7 @@ def load_config(is_verbose):
 
 def argparser():
     import argparse
-    parser = argparse.ArgumentParser(description='create custom systemd targets to control multiple systemd services at once!')
+    parser = argparse.ArgumentParser(description='create custom systemd targets to control multiple systemd services at once!', usage='%(prog)s [-h] [--dryrun] [--force] [--undo] [-v] -t TARGET -r REPO')
     parser.add_argument('--dryrun', help='show changes without making them', action='store_true', dest='is_dryrun')
     parser.add_argument('--force', help='overwrite any existing files', action='store_true', dest='is_force')
     parser.add_argument('--undo', help='undo changes', action='store_true', dest='is_undo')
