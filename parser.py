@@ -271,6 +271,8 @@ def modify_services(service, target, is_dryrun, is_force, is_verbose):
     file_content = dedent('''\
     [Unit]
     StopWhenUnneeded=yes
+    PartOf={t}.target
+
     [Install]
     WantedBy={t}.target''').format(t=target)
 
@@ -310,7 +312,7 @@ def modify_services(service, target, is_dryrun, is_force, is_verbose):
             print('ERROR: permission denied, try running again with root permissions')
             exit(1)
 
-    append_content = f'Wants={service}\n'
+    append_content = f'\nWants={service}'
     target_path = f'/etc/systemd/system/{target}.target'
 
     print(f'INFO: appending service to target file')
@@ -326,6 +328,27 @@ def modify_services(service, target, is_dryrun, is_force, is_verbose):
         except PermissionError:
             print('ERROR: permission denied, try running again with root permissions')
             exit(1)
+
+def daemon_reload():
+    import subprocess
+    from sys import exit
+    from textwrap import indent
+
+    cmd = f'systemctl daemon-reload'
+
+    print(f'INFO: running command \'{cmd}\' for systemd file edits to take affect')
+    sp = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    rc = sp.wait()
+    stdout_byte, stderr_byte = sp.communicate()
+
+    stdout = stdout_byte.decode('UTF-8')
+    stderr = stderr_byte.decode('UTF-8')
+
+    if rc != 0:
+        print(f'ERROR: while running command \'{cmd}\', return code: \'{rc}\', printing stderr')
+        print(indent(stderr, '    '))
+        exit(rc)
 
 def instructions(target):
     from textwrap import dedent, indent
@@ -364,6 +387,7 @@ def main():
         service=item['service']
         modify_services(service, target, is_dryrun, is_force, is_verbose)
 
+    daemon_reload()
     instructions(target)
 
 main()
