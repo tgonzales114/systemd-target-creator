@@ -24,25 +24,25 @@ required packages (rpms) for el7:
 ```
 
 ### How to run
-- Ensure you have a copy of `parser.py` and `config.yml` in a local directory on your system.
+- Ensure you have a copy of `systemd-target-creator.py` and `config.yml` in a local directory on your system.
 - Wanna get an idea of what this script will try to do?
-  - do a dryrun `./parser.py -t TARGET -r REPO --dryrun`
+  - do a dryrun `./systemd-target-creator.py -t TARGET -r REPO --dryrun`
 - Still not sure what is going on?
-  - try adding the verbose flag. `./parser.py -t TARGET -r REPO --dryrun -v`
+  - try adding the verbose flag. `./systemd-target-creator.py -t TARGET -r REPO --dryrun -v`
 - Want to add or remove a service?
   - modify the `config.yml`
 - Not sure how to edit the `.yml` or yaml files?
   - check the [online yaml documentation](https://yaml.org/spec/1.2.2/#22-structures)
 - Ready to try it out for real?
-  - re-run with root permission `sudo ./parser.py -t TARGET -r REPO`
+  - re-run with root permission `sudo ./systemd-target-creator.py -t TARGET -r REPO`
 - Did the script stop due to a file already existing?
   - verify this file is safe to overwrite or make a backup just in case!
-  - then add the force flag `sudo ./parser.py -t TARGET -r REPO --force`
+  - then add the force flag `sudo ./systemd-target-creator.py -t TARGET -r REPO --force`
 
 ### Command Help
 ```bash
-$ ./parser.py --help
-usage: parser.py [-h] [--dryrun] [--force] [-v] -t TARGET -r REPO
+$ ./systemd-target-creator.py --help
+usage: systemd-target-creator.py [-h] [--dryrun] [--force] [-v] -t TARGET -r REPO
 
 create custom systemd targets to control multiple systemd services at once!
 
@@ -60,7 +60,7 @@ optional arguments:
 ### Example
 ```bash
 # create custom systemd target 'hashi' that will be able to control all systemd services installed by packages from the hashicorp rpm repository
-sudo ./parser.py -t hashi -r hashicorp
+sudo ./systemd-target-creator.py -t hashi -r hashicorp
 ```
 
 ### Controlling the target
