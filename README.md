@@ -38,11 +38,14 @@ required packages (rpms) for el7:
 - Did the script stop due to a file already existing?
   - verify this file is safe to overwrite or make a backup just in case!
   - then add the force flag `sudo ./systemd-target-creator.py -t TARGET -r REPO --force`
+- Not happy with the result?
+  - add the undo flag `sudo ./systemd-target-creator.py -t TARGET -r REPO --undo`
+- Not sure if you want to undo?
+  - add the dryrun flag too `sudo ./systemd-target-creator.py -t TARGET -r REPO --undo --dryrun`
 
 ### Command Help
 ```bash
-$ ./systemd-target-creator.py --help
-usage: systemd-target-creator.py [-h] [--dryrun] [--force] [-v] -t TARGET -r REPO
+usage: systemd-target-creator.py [-h] [--dryrun] [--force] [--undo] [-v] -t TARGET -r REPO
 
 create custom systemd targets to control multiple systemd services at once!
 
@@ -50,6 +53,7 @@ optional arguments:
   -h, --help            show this help message and exit
   --dryrun              show changes without making them
   --force               overwrite any existing files
+  --undo                undo changes
   -v, --verbose         show more output
   -t TARGET, --target TARGET
                         name of systemd target to create

@@ -24,18 +24,20 @@ def load_config(is_verbose):
 
 def argparser():
     import argparse
-    parser = argparse.ArgumentParser(description='create custom systemd targets to control multiple systemd services at once!')
+    parser = argparse.ArgumentParser(description='create custom systemd targets to control multiple systemd services at once!', usage='%(prog)s [-h] [--dryrun] [--force] [--undo] [-v] -t TARGET -r REPO')
     parser.add_argument('--dryrun', help='show changes without making them', action='store_true', dest='is_dryrun')
     parser.add_argument('--force', help='overwrite any existing files', action='store_true', dest='is_force')
+    parser.add_argument('--undo', help='undo changes', action='store_true', dest='is_undo')
     parser.add_argument('-v', '--verbose', help='show more output', action='store_true', dest='is_verbose')
     parser.add_argument('-t', '--target', help='name of systemd target to create', action='store', dest='target', required=True)
     parser.add_argument('-r', '--repo', help='name of rpm repository to filter services', action='store', dest='repo', required=True)
     args = parser.parse_args()
     return args
 
-def create_target(target, repo, is_dryrun, is_force, is_verbose):
+def create_target(target, repo, is_dryrun, is_force, is_verbose, is_undo):
     from textwrap import dedent, indent
     from os import path
+    from os import remove
     from sys import exit
     file_content = dedent('''\
     [Unit]
@@ -45,26 +47,41 @@ def create_target(target, repo, is_dryrun, is_force, is_verbose):
     AllowIsolate=no''').format(t=target, r=repo)
 
     file_path = '/etc/systemd/system/' + str(target) + '.target'
-    print('INFO: creating systemd target file')
+    if not is_undo:
+        if is_dryrun:
+            print('INFO: would create systemd target file')
+        else:
+            print('INFO: creating systemd target file')
 
-    if path.exists(file_path) and not is_force:
-        print(f'ERROR: file already exists \'{file_path}\' if you are sure you want to overwrite this file re-run with --force')
-        exit(1)
-
-    if path.exists(file_path) and is_force:
-        print(f'WARNING: overwriting file \'{file_path}\'')
-
-    if is_verbose:
-        print(indent(f'# {file_path}', '    '))
-        print(indent(file_content, '    '))
-
-    if not is_dryrun:
-        try:
-            with open(file_path, 'w') as file:
-                file.write(file_content)
-        except PermissionError:
-            print('ERROR: permission denied, try running again with root permissions')
+        if path.exists(file_path) and not is_force:
+            print(f'ERROR: file already exists \'{file_path}\' if you are sure you want to overwrite this file re-run with --force')
             exit(1)
+
+        if path.exists(file_path) and is_force:
+            print(f'WARNING: overwriting file \'{file_path}\'')
+
+        if is_verbose:
+            print(indent(f'# {file_path}', '    '))
+            print(indent(file_content, '    '))
+
+        if not is_dryrun:
+            try:
+                with open(file_path, 'w') as file:
+                    file.write(file_content)
+            except PermissionError:
+                print('ERROR: permission denied, try running again with root permissions')
+                exit(1)
+
+    if path.exists(file_path) and is_undo:
+        if is_dryrun:
+            print(f'WARNING: would remove systemd target file \'{file_path}\'')
+        else:
+            print(f'WARNING: removing systemd target file \'{file_path}\'')
+            try:
+                remove(file_path)
+            except PermissionError:
+                print('ERROR: permission denied, try running again with root permissions')
+                exit(1)
 
 def get_os_release():
     import csv
@@ -231,26 +248,26 @@ def get_services_to_modify(service_data, repo, inclusions, exclusions):
         if from_repo == repo:
             services.append(i)
 
-    print('INFO: adding inclusions')
+    print('INFO: adding inclusions to list of systemd services to be modified')
     for i in inclusions:
         if not i in map(itemgetter('service'), service_data):
-            print(f'WARNING: systemd service \'{i}\' does not exist, not including')
+            print(f'WARNING: systemd service \'{i}\' does not exist, not including in list')
             continue
         if i in map(itemgetter('service'), services):
-            print(f'NOTICE: systemd service \'{i}\' already added, do not need to include')
+            print(f'NOTICE: systemd service \'{i}\' already added, do not need to include in list')
             continue
         print(f'NOTICE: adding systemd service \'{i}\'')
         for s in service_data:
             if i == s['service']:
                 services.append(s)
 
-    print('INFO: removing exclusions')
+    print('INFO: removing exclusions from list of systemd services to be modified')
     for i in exclusions:
         if not i in map(itemgetter('service'), service_data):
-            print(f'WARNING: systemd service \'{i}\' does not exist, not removing')
+            print(f'WARNING: systemd service \'{i}\' does not exist, not removing from list')
             continue
         if not i in map(itemgetter('service'), services):
-            print(f'NOTICE: could not find systemd service \'{i}\' do not need to remove')
+            print(f'NOTICE: could not find systemd service \'{i}\' in list, do not need to remove from list')
             continue
         print(f'NOTICE: removing systemd service \'{i}\'')
         for s in service_data:
@@ -263,10 +280,12 @@ def get_services_to_modify(service_data, repo, inclusions, exclusions):
 
     return services
 
-def modify_services(service, target, is_dryrun, is_force, is_verbose):
+def modify_services(service, target, is_dryrun, is_force, is_verbose, is_undo):
     from textwrap import dedent, indent
     from os import path
     from os import mkdir
+    from os import rmdir
+    from os import remove
     from sys import exit
 
     file_content = dedent('''\
@@ -281,77 +300,113 @@ def modify_services(service, target, is_dryrun, is_force, is_verbose):
     file_name = f'override.conf'
     file_path = f'{file_dir}/{file_name}'
 
-    if not path.exists(file_dir):
-        print(f'INFO: creating override directory for systemd service {service}')
+    append_content = f'\nWants={service}'
+    target_path = f'/etc/systemd/system/{target}.target'
+
+    if not is_undo:
+        if not path.exists(file_dir):
+            if is_dryrun:
+                print(f'INFO: would create override directory for systemd service {service}')
+            else:
+                print(f'INFO: creating override directory for systemd service {service}')
+
+            if is_verbose:
+                print(indent(f'# {file_dir}', '    '))
+            if not is_dryrun:
+                try:
+                    mkdir(file_dir)
+                except PermissionError:
+                    print('ERROR: permission denied, try running again with root permissions')
+                    exit(1)
+
+        if is_dryrun:
+            print(f'INFO: would create override file for systemd service {service}')
+        else:
+            print(f'INFO: creating override file for systemd service {service}')
+
+        if path.exists(file_path) and not is_force:
+            print(f'ERROR: file already exists \'{file_path}\' if you are sure you want to overwrite this file re-run with --force')
+            exit(1)
+
+        if path.exists(file_path) and is_force:
+            print(f'WARNING: overwriting file \'{file_path}\'')
+
         if is_verbose:
-            print(indent(f'# {file_dir}', '    '))
+            print(indent(f'# {file_path}', '    '))
+            print(indent(file_content, '    '))
+
         if not is_dryrun:
             try:
-                mkdir(file_dir)
+                with open(file_path, 'w') as file:
+                    file.write(file_content)
             except PermissionError:
                 print('ERROR: permission denied, try running again with root permissions')
                 exit(1)
 
-    print(f'INFO: creating override file for systemd service {service}')
+        if is_dryrun:
+            print(f'INFO: would append service to target file')
+        else:
+            print(f'INFO: appending service to target file')
 
-    if path.exists(file_path) and not is_force:
-        print(f'ERROR: file already exists \'{file_path}\' if you are sure you want to overwrite this file re-run with --force')
-        exit(1)
+        if is_verbose:
+            print(indent(f'# {target_path}', '    '))
+            print(indent(append_content, '    '))
 
-    if path.exists(file_path) and is_force:
-        print(f'WARNING: overwriting file \'{file_path}\'')
+        if not is_dryrun:
+            try:
+                with open(target_path, 'a') as file:
+                    file.write(append_content)
+            except PermissionError:
+                print('ERROR: permission denied, try running again with root permissions')
+                exit(1)
 
-    if is_verbose:
-        print(indent(f'# {file_path}', '    '))
-        print(indent(file_content, '    '))
+    if path.exists(file_path) and is_undo:
+        if is_dryrun:
+            print(f'WARNING: would remove override file \'{file_path}\'')
+        else:
+            print(f'WARNING: removing override file \'{file_path}\'')
+            try:
+                remove(file_path)
+            except PermissionError:
+                print('ERROR: permission denied, try running again with root permissions')
+                exit(1)
 
-    if not is_dryrun:
-        try:
-            with open(file_path, 'w') as file:
-                file.write(file_content)
-        except PermissionError:
-            print('ERROR: permission denied, try running again with root permissions')
-            exit(1)
+    if path.exists(file_dir) and is_undo:
+        if is_dryrun:
+            print(f'WARNING: would remove override directory \'{file_dir}\'')
+        else:
+            print(f'WARNING: removing override directory \'{file_dir}\'')
+            try:
+                rmdir(file_dir)
+            except PermissionError:
+                print('ERROR: permission denied, try running again with root permissions')
+                exit(1)
 
-    append_content = f'\nWants={service}'
-    target_path = f'/etc/systemd/system/{target}.target'
-
-    print(f'INFO: appending service to target file')
-
-    if is_verbose:
-        print(indent(f'# {target_path}', '    '))
-        print(indent(append_content, '    '))
-
-    if not is_dryrun:
-        try:
-            with open(target_path, 'a') as file:
-                file.write(append_content)
-        except PermissionError:
-            print('ERROR: permission denied, try running again with root permissions')
-            exit(1)
-
-def daemon_reload():
+def daemon_reload(is_dryrun):
     import subprocess
     from sys import exit
     from textwrap import indent
 
     cmd = f'systemctl daemon-reload'
 
-    print(f'INFO: running command \'{cmd}\' for systemd file edits to take affect')
-    sp = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if is_dryrun:
+        print(f'INFO: would run command \'{cmd}\' for systemd file changes to take affect')
+    else:
+        print(f'INFO: running command \'{cmd}\' for systemd file changes to take affect')
+        sp = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-    rc = sp.wait()
-    stdout_byte, stderr_byte = sp.communicate()
+        rc = sp.wait()
+        stdout_byte, stderr_byte = sp.communicate()
 
-    stdout = stdout_byte.decode('UTF-8')
-    stderr = stderr_byte.decode('UTF-8')
+        stdout = stdout_byte.decode('UTF-8')
+        stderr = stderr_byte.decode('UTF-8')
 
-    if rc != 0:
-        print(f'ERROR: while running command \'{cmd}\', return code: \'{rc}\', printing stderr')
-        print(indent(stderr, '    '))
-        exit(rc)
+        if rc != 0:
+            print(f'ERROR: while running command \'{cmd}\', return code: \'{rc}\', printing stderr')
+            print(indent(stderr, '    '))
+            exit(rc)
 
-def instructions(target):
+def instructions(target, is_dryrun):
     from textwrap import dedent, indent
 
     message = dedent('''\
@@ -364,7 +419,10 @@ def instructions(target):
     # start all services controlled by the target
     sudo systemctl start {t}.target''').format(t=target)
 
-    print(f'INFO: finished creating custom target: {target}.target')
+    if is_dryrun:
+        print(f'INFO: would finish creating custom target: {target}.target')
+    else:
+        print(f'INFO: finished creating custom target: {target}.target')
     print('INFO: control commands:')
     print(indent(message, '    '))
 
@@ -375,6 +433,7 @@ def main():
     is_dryrun = args.is_dryrun
     is_force = args.is_force
     is_verbose = args.is_verbose
+    is_undo = args.is_undo
 
     inclusions, exclusions = load_config(is_verbose)
 
@@ -383,12 +442,13 @@ def main():
 
     service_data = get_all_service_data(os_version, is_verbose)
     modify_service_data = get_services_to_modify(service_data, repo, inclusions, exclusions)
-    create_target(target, repo, is_dryrun, is_force, is_verbose)
+    create_target(target, repo, is_dryrun, is_force, is_verbose, is_undo)
     for item in modify_service_data:
         service=item['service']
-        modify_services(service, target, is_dryrun, is_force, is_verbose)
+        modify_services(service, target, is_dryrun, is_force, is_verbose, is_undo)
 
-    daemon_reload()
-    instructions(target)
+    daemon_reload(is_dryrun)
+    if not is_undo:
+        instructions(target, is_dryrun)
 
 main()
